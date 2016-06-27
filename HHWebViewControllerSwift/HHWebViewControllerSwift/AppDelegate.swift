@@ -19,7 +19,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         self.window?.backgroundColor = UIColor.clearColor()
         
         let webViewController = HHWebViewControllerSwift(url: NSURL(string: "http://www.google.com")!)
+        webViewController.customShareMessage = "- Shared via test"
+        
         let navController = UINavigationController(rootViewController: webViewController)
+        navController.navigationBar.barTintColor = UIColor.redColor()
+        
+        
         self.window?.rootViewController = navController
         self.window?.makeKeyAndVisible()
         return true

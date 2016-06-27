@@ -8,11 +8,11 @@
 
 import UIKit
 
-typealias HHWebViewControllerShareCompletionBlock = (activityType: String, completed: Bool, returnedItems: [AnyObject], activityError: NSError?, sharedURL: NSURL?) -> ()
+typealias HHWebViewControllerShareCompletionBlock = (activityType: String?, completed: Bool, returnedItems: [AnyObject]?, activityError: NSError?, sharedURL: NSURL?) -> ()
 
 //typedef void(^HHWebViewControllerShareCompletionBlock)(NSString *activityType, BOOL completed, NSArray *returnedItems, NSError *activityError, NSURL *sharedURL);
 
-@objc class HHWebViewControllerSwift: UIViewController, UIWebViewDelegate, UIScrollViewDelegate, UIGestureRecognizerDelegate {
+@objc class HHWebViewControllerSwift: UIViewController, UIWebViewDelegate, UIScrollViewDelegate, UIGestureRecognizerDelegate, UIActivityItemSource {
     var url: NSURL!
     var webView: UIWebView!
     var toolBar: UIToolbar!
@@ -28,15 +28,7 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
     var shouldHideStatusBarOnScroll: Bool = true
     var shouldHideToolBarOnScroll: Bool = true
     
-    var showControlsInNavBarOniPad: Bool = true {
-        didSet {
-            if (showControlsInNavBarOniPad) {
-                if UI_USER_INTERFACE_IDIOM() != .Pad {
-                    showControlsInNavBarOniPad = false
-                }
-            }
-        }
-    }
+    var showControlsInNavBarOniPad: Bool = true
     
     var shouldPreventChromeHidingOnScrollOnInitialLoad: Bool = false
     var shouldShowActionButton: Bool = true
@@ -52,8 +44,8 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
     var flexiblespace: UIBarButtonItem? = nil
     var webViewLoadingItems: Int = 0
     
-    var initialContentOffset: Float = 0.0
-    var previousContentDelta: Float = 0.0
+    var initialContentOffset: CGFloat = 0.0
+    var previousContentDelta: CGFloat = 0.0
     var scrollingDown: Bool = false
     
     var hadStatusBarHidden: Bool = false
@@ -70,7 +62,6 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
         super.init(nibName: nil, bundle: nil)
         
         self.url = url
-        self.showControlsInNavBarOniPad = true
         self.shouldShowControls = true
         self.shouldControlsImmediately = true
         self.shouldHideNavBarOnScroll = true
@@ -82,6 +73,12 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
         self.shouldIgnoreWebViewNavigationStackForBackForwardbuttons = false
         self.hadStatusBarHidden = UIApplication.sharedApplication().statusBarHidden
         self.isExitingScreen = false
+        
+        if (UI_USER_INTERFACE_IDIOM() != .Pad) {
+            self.showControlsInNavBarOniPad = false
+        } else {
+            self.showControlsInNavBarOniPad = true;
+        }
     }
     
     required init?(coder aDecoder: NSCoder) {
@@ -93,12 +90,14 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
         self.view = UIView(frame: UIScreen.mainScreen().bounds)
         self.view.autoresizingMask = [.FlexibleWidth, .FlexibleHeight]
         self.view.autoresizesSubviews = true
+        
         self.webView = UIWebView(frame: self.view.frame)
         self.webView.autoresizingMask = self.view.autoresizingMask
         self.webView.delegate = self
         self.webView.scrollView.delegate = self
         self.webView.scalesPageToFit = true
         self.view!.addSubview(self.webView)
+        
         self.createOrUpdateControls()
     }
     
@@ -109,12 +108,12 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
     }
     
     override func viewWillAppear(animated: Bool) {
+        super.viewWillAppear(animated)
+        
         guard let navController = self.navigationController else {
             assert(self.navigationController == nil, "HHWebViewController must be contained in a navigation controller.")
             return
         }
-        
-        super.viewWillAppear(animated)
         
         if (self.isMovingToParentViewController()) {
             self.hadToolBarHidden = navController.toolbarHidden
@@ -128,28 +127,27 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
     
     override func viewWillDisappear(animated: Bool) {
         super.viewWillDisappear(animated)
+        
         //force the status bar and nav toolbar back to their original states when this viewController is being popped off stack
         if (self.isMovingFromParentViewController()) {
             self.isExitingScreen = true
-            //UIApplication.sharedApplication().setStatusBarHidden(hadStatusBarHidden, withAnimation: .Fade)
             
-            self.navigationController?.setNavigationBarHidden(hadNavBarHidden, animated: animated)
-            self.navigationController?.setToolbarHidden(hadToolBarHidden, animated: animated)
+            self.navigationController?.setNavigationBarHidden(self.hadNavBarHidden, animated: animated)
+            self.navigationController?.setToolbarHidden(self.hadToolBarHidden, animated: animated)
             
-            //UIApplication.sharedApplication().setStatusBarHidden(false, withAnimation: .Fade)
             self.prefersStatusBarHidden()
             self.setNeedsStatusBarAppearanceUpdate()
-            
-//            if self.respondsToSelector(#selector(UIViewController.setNeedsStatusBarAppearanceUpdate)) {
-//                self.prefersStatusBarHidden()
-//                self.performSelector(#selector(UIViewController.setNeedsStatusBarAppearanceUpdate))
-//            } else {
-//                // iOS 6
-//                UIApplication.sharedApplication().setStatusBarHidden(hadStatusBarHidden, withAnimation: .Fade)
-//            }
         }
         
         UIApplication.sharedApplication().networkActivityIndicatorVisible = false
+    }
+    
+    func loadURL(url: NSURL) {
+        if (!url.isEqual(self.url)) {
+            self.url = url
+        }
+        
+        self.webView.loadRequest(NSURLRequest(URL: url))
     }
     
     //MARK: - Rotation
@@ -178,7 +176,7 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
     }
 
     
-    
+    //MARK: - Controls
     func createOrUpdateControls() {
         if (self.shouldShowControls) {
             
@@ -203,11 +201,11 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
             }
             
             if (readerButton == nil) {
-                readerButton = UIBarButtonItem(customView: HHDynamicBarButton.readerButtonViewWithTarget(self, action: "forwardButtonHit:"))
+                readerButton = UIBarButtonItem(customView: HHDynamicBarButton.readerButtonViewWithTarget(self, action: #selector(readerButtonHit(_:))))
             }
             
             if (actionButton == nil) {
-                actionButton = UIBarButtonItem(barButtonSystemItem: .Action, target: self, action: "stopHit:")
+                actionButton = UIBarButtonItem(barButtonSystemItem: .Action, target: self, action: #selector(actionHit(_:)))
             }
             
             var items: [UIBarButtonItem] = Array()
@@ -283,11 +281,88 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
     }
 
     func readerButtonHit(sender: UIBarButtonItem) {
-        //self.loadURL(NSURL(string: "http://www.readability.com/m?url=\(self.url.absoluteString.stringByAddingPercentEscapesUsingEncoding(NSUTF8StringEncoding))")!)
-        
-        self.loadURL(NSURL(string: "http://www.readability.com/m?url=\(self.url.absoluteString.stringByAddingPercentEncodingWithAllowedCharacters(NSCharacterSet.URLQueryAllowedCharacterSet()))")!)
+        if let url = self.webView.request?.URL, encodedURL = url.absoluteString.stringByAddingPercentEncodingWithAllowedCharacters(NSCharacterSet.URLQueryAllowedCharacterSet()) {
+            self.loadURL(NSURL(string: "http://www.readability.com/m?url=\(encodedURL)")!)
+        }
     }
     
+    func actionHit(sender: UIBarButtonItem) {
+        var activityItems: [AnyObject]
+        
+        if let customShareMessage = self.customShareMessage {
+            activityItems = [self, customShareMessage]
+        } else {
+            activityItems = [self]
+        }
+        
+        let activityController = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        
+        if (UIDevice.currentDevice().userInterfaceIdiom == .Pad) {
+            activityController.popoverPresentationController?.sourceView = self.view
+            activityController.popoverPresentationController?.barButtonItem = sender
+            activityController.popoverPresentationController?.permittedArrowDirections = UIPopoverArrowDirection.Up
+        }
+        
+        activityController.completionWithItemsHandler = { (activityType, completed, returnedItems, activityError) -> () in
+            self.activityViewControllerCompletionHandlerWithActivityType(activityType, completed: completed, returnedItems: returnedItems, activityError: activityError, sharedURL: self.webView.request?.URL)
+        }
+        
+        self.presentViewController(activityController, animated: true, completion: nil)
+    }
+    
+    func activityViewControllerCompletionHandlerWithActivityType(activityType: String?, completed: Bool, returnedItems: [AnyObject]?, activityError: NSError?, sharedURL: NSURL?) {
+        if let shareCompletionBlock = self.self.shareCompletionBlock {
+            shareCompletionBlock(activityType: activityType, completed: completed, returnedItems: returnedItems, activityError: activityError, sharedURL: sharedURL)
+        }
+    }
+    
+    
+    //MARK: - UIWebViewDelegate
+    func webViewDidStartLoad(webView: UIWebView) {
+        if (webViewLoadingItems == 0) {
+            UIApplication.sharedApplication().networkActivityIndicatorVisible = true
+            self.createOrUpdateControls()
+        }
+        
+        self.webViewLoadingItems+=1
+    }
+    
+    func webViewDidFinishLoad(webView: UIWebView) {
+        self.webViewLoadingItems-=1
+        
+        if (webViewLoadingItems <= 0) {
+            if (self.shouldPreventChromeHidingOnScrollOnInitialLoad) {
+                self.shouldHideNavBarOnScroll = true
+                self.shouldHideStatusBarOnScroll = true
+                self.shouldHideToolBarOnScroll = true
+            }
+            
+            UIApplication.sharedApplication().networkActivityIndicatorVisible = false
+            self.createOrUpdateControls()
+        }
+        
+        if let title = self.webView.stringByEvaluatingJavaScriptFromString("document.title") {
+            self.navigationItem.title = title
+        }
+    }
+    
+    func webView(webView: UIWebView, didFailLoadWithError error: NSError?) {
+        self.webViewLoadingItems-=1
+        
+        if (webViewLoadingItems <= 0) {
+            if (self.shouldPreventChromeHidingOnScrollOnInitialLoad) {
+                self.shouldHideNavBarOnScroll = true
+                self.shouldHideStatusBarOnScroll = true
+                self.shouldHideToolBarOnScroll = true
+            }
+        
+            UIApplication.sharedApplication().networkActivityIndicatorVisible = false
+            self.createOrUpdateControls()
+        }
+        
+    }
+
+    //MARK: - Show/Hide UI
     func showUI() {
         if (self.shouldHideNavBarOnScroll) {
             if let navigationController = self.navigationController {
@@ -315,7 +390,7 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
     func hideUI() {
         if (self.shouldHideNavBarOnScroll) {
             if let navigationController = self.navigationController {
-                if (navigationController.navigationBarHidden) {
+                if (!navigationController.navigationBarHidden) {
                     navigationController.setNavigationBarHidden(true, animated: true)
                 }
             }
@@ -336,12 +411,57 @@ typealias HHWebViewControllerShareCompletionBlock = (activityType: String, compl
         }
     }
     
-    func loadURL(url: NSURL) {
-        if (!url.isEqual(self.url)) {
-            self.url = url
+    //MARK: - UIScrollViewDelegate
+    func scrollViewWillBeginDragging(scrollView: UIScrollView) {
+        initialContentOffset = scrollView.contentOffset.y;
+        previousContentDelta = 0;
+    }
+    
+    func scrollViewDidScroll(scrollView: UIScrollView) {
+        let prevDelta: CGFloat = previousContentDelta;
+        let delta: CGFloat = scrollView.contentOffset.y - initialContentOffset;
+        
+        if (delta > 0 && prevDelta <= 0) {
+            //down
+            scrollingDown = true
+            self.hideUI()
+        } else if (delta < 0 && prevDelta >= 0) {
+            //up
+            scrollingDown = false
+            self.showUI()
         }
         
-        self.webView.loadRequest(NSURLRequest(URL: url))
+        previousContentDelta = delta
+    }
+
+    //MARK: - UIActivityItemSource
+    func activityViewController(activityViewController: UIActivityViewController, itemForActivityType activityType: String) -> AnyObject? {
+        if let url = self.webView.request?.URL {
+            return url
+        } else {
+            return self.url
+        }
+    }
+    
+    func activityViewControllerPlaceholderItem(activityViewController: UIActivityViewController) -> AnyObject {
+        if let url = self.webView.request?.URL {
+            return url
+        } else {
+            return self.url
+        }
+    }
+    
+    func activityViewController(activityViewController: UIActivityViewController, subjectForActivityType activityType: String?) -> String {
+        if let title = self.navigationItem.title {
+            return title
+        } else {
+            return ""
+        }
+    }
+    
+    
+    deinit {
+        self.webView.stopLoading()
     }
 }
 
